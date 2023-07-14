@@ -3,21 +3,23 @@ package controllers
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
+	"github.com/Austine05/todo-server/database"
 	"github.com/Austine05/todo-server/config"
-	"github.com/Austine05/todo-server/controllers"
 	"github.com/Austine05/todo-server/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"github.com/gorilla/mux"
+	"github.com/dgrijalva/jwt-go"
 )
 
 var userCollection *mongo.Collection
 
 func init() {
-	userCollection = dbClient.Database("todosDB").Collection("user")
+	userCollection = database.DBClient.Database(config.GetConfig().MongoDBName).Collection("user")
 }
 
 type Claims struct {
@@ -29,7 +31,7 @@ type Claims struct {
 func RegisterUser(w http.ResponseWriter, r *http.Request) {
 	var newUser models.User
 	json.NewDecoder(r.Body).Decode(&newUser)
-	newUser.ID = primitive.NewObjectID().Hex()
+	newUser.ID = primitive.NewObjectID()
 
 	_, err := userCollection.InsertOne(context.TODO(), newUser)
 	if err != nil {
@@ -66,7 +68,7 @@ func LoginUser(w http.ResponseWriter, r *http.Request) {
 		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 	})
 
-	tokenString, err := token.SignedString([]byte(config.JwtSecret))
+	tokenString, err := token.SignedString([]byte(config.GetConfig().JwtSecret))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

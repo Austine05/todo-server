@@ -15,7 +15,7 @@ type Config struct {
 	ServerPort  string
 }
 
-var cfg Config
+var Cfg Config
 
 func init() {
 	err := godotenv.Load(".env")
@@ -23,7 +23,7 @@ func init() {
 		fmt.Println("Error loading .env file:", err)
 	}
 
-	cfg = Config{
+	Cfg = Config{
 		JwtSecret:   os.Getenv("JWT_SECRET"),
 		MongoDBURI:  os.Getenv("MONGODB_URI"),
 		MongoDBName: os.Getenv("MONGODB_NAME"),
@@ -33,5 +33,5 @@ func init() {
 }
 
 func GetConfig() Config {
-	return cfg
+	return Cfg
 }

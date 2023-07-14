@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/Austine05/todo-server/database"
 	"github.com/Austine05/todo-server/models"
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
@@ -15,13 +16,14 @@ import (
 var todoCollection *mongo.Collection
 
 func init() {
-	todoCollection = dbClient.Database("TodosDB").Collection("todo")
+	todoCollection = database.DBClient.Database("todosDB").Collection("todo")
 }
 
 // Create a new todo
 func CreateTodo(w http.ResponseWriter, r *http.Request) {
 	var newTodo models.Todo
 	json.NewDecoder(r.Body).Decode(&newTodo)
+	
 	newTodo.ID = primitive.NewObjectID()
 	_, err := todoCollection.InsertOne(context.TODO(), newTodo)
 	if err != nil {

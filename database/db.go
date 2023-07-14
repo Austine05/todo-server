@@ -1,4 +1,4 @@
-package controllers
+package database
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var dbClient *mongo.Client
+var DBClient *mongo.Client
 
 func init() {
 	// Initialize the MongoDB client
@@ -25,5 +25,5 @@ func init() {
 	}
 
 	// Set the database client
-	dbClient = client
+	DBClient = client
 }

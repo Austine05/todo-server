@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Austine05/todo-server/config"
 	"github.com/Austine05/todo-server/controllers"
 	"github.com/Austine05/todo-server/middleware"
 	"github.com/gorilla/mux"
@@ -30,6 +31,8 @@ func main() {
 	router.HandleFunc("/users/{id}/password", middleware.Authenticate(controllers.UpdatePassword)).Methods("PUT")
 
 	// Starting the server
-	fmt.Println("server started at port :8000")
-	log.Fatal(http.ListenAndServe(":8000", router))
+	addr := config.Cfg.ServerHost + ":" + config.Cfg.ServerPort
+	log.Println("server started on", addr)
+	fmt.Println("server started on", addr)
+	log.Fatal(http.ListenAndServe(addr, router))
 }
