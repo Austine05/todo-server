@@ -5,29 +5,52 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Austine05/todo-server/config"
 	"github.com/dgrijalva/jwt-go"
 )
 
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+type Claims struct {
+	Username string `json:"username"`
+	jwt.StandardClaims
+}
+
+func Authenticate(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tokenString := extractTokenFromHeader(r)
+		if tokenString == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			return []byte(os.Getenv("JWT_SECRET")), nil
+		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+			return []byte(config.GetConfig().JwtSecret), nil
 		})
 
-		if err != nil || !token.Valid {
-			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		claims, _ := token.Claims.(jwt.MapClaims)
-		ctx := context.WithValue(r.Context(), "userID", claims["userID"])
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+		if !token.Valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		claims, ok := token.Claims.(*Claims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), "claims", claims)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+func extractTokenFromHeader(r *http.Request) string {
+	bearerToken := r.Header.Get("Authorization")
+	if len(bearerToken) > 7 && strings.HasPrefix(bearerToken, "Bearer ") {
+		return bearerToken[7:]
+	}
+	return ""
 }

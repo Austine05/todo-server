@@ -1,114 +1,151 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/Austine05/todo-server/models"
+	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
-// POST /todos
-func CreateTodo(w http.ResponseWriter, r *http.Request) {
-	var todo models.Todo
-	json.NewDecoder(r.Body).Decode(&todo)
+var todoCollection *mongo.Collection
 
-	result, err := collection.InsertOne(context.Background(), todo)
-	if err != nil {
-		respondWithJSON(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	todo.ID = result.InsertedID.(primitive.ObjectID)
-	respondWithJSON(w, http.StatusCreated, "todo created successfully")
+func init() {
+	todoCollection = dbClient.Database("TodosDB").Collection("todo")
 }
 
-// PUT /todos/{id}
+// Create a new todo
+func CreateTodo(w http.ResponseWriter, r *http.Request) {
+	var newTodo models.Todo
+	json.NewDecoder(r.Body).Decode(&newTodo)
+	newTodo.ID = primitive.NewObjectID()
+	_, err := todoCollection.InsertOne(context.TODO(), newTodo)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(newTodo)
+}
+
+// Update an existing todo
 func UpdateTodo(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	id, _ := primitive.ObjectIDFromHex(params["id"])
-
-	var todo models.Todo
-	json.NewDecoder(r.Body).Decode(&todo)
-
-	_, err := collection.UpdateOne(context.Background(), bson.M{"_id": id}, bson.M{"$set": todo})
+	todoID, err := primitive.ObjectIDFromHex(params["id"])
 	if err != nil {
-		respondWithJSON(w, http.StatusInternalServerError, err.Error())
+		http.Error(w, "Invalid todo ID", http.StatusBadRequest)
 		return
 	}
 
-	todo.ID = id
-	respondWithJSON(w, http.StatusOK, todo)
+	var updatedTodo models.Todo
+	json.NewDecoder(r.Body).Decode(&updatedTodo)
+	updatedTodo.ID = todoID
+
+	filter := bson.M{"_id": todoID}
+	update := bson.M{"$set": bson.M{
+		"name":        updatedTodo.Name,
+		"description": updatedTodo.Description,
+	}}
+	_, err = todoCollection.UpdateOne(context.TODO(), filter, update)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(updatedTodo)
 }
 
-// PUT /todos/{id}/deadline
-func ChangeDeadline(w http.ResponseWriter, r *http.Request) {
+// Update the status of a todo (mark as done/undone)
+func UpdateTodoStatus(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	id, _ := primitive.ObjectIDFromHex(params["id"])
-
-	var deadline struct {
-		Deadline time.Time `json:"deadline"`
-	}
-	json.NewDecoder(r.Body).Decode(&deadline)
-
-	_, err := collection.UpdateOne(context.Background(), bson.M{"_id": id}, bson.M{"$set": bson.M{"deadline": deadline.Deadline}})
+	todoID, err := primitive.ObjectIDFromHex(params["id"])
 	if err != nil {
-		respondWithJSON(w, http.StatusInternalServerError, err.Error())
+		http.Error(w, "Invalid todo ID", http.StatusBadRequest)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, "Deadline changed successfully")
+	var updatedTodo models.Todo
+	json.NewDecoder(r.Body).Decode(&updatedTodo)
+	updatedTodo.ID = todoID
+
+	filter := bson.M{"_id": todoID}
+	update := bson.M{"$set": bson.M{
+		"status": updatedTodo.Status,
+	}}
+	_, err = todoCollection.UpdateOne(context.TODO(), filter, update)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(updatedTodo)
 }
 
-// DELETE /todos/{id}
-func DeleteTodo(w http.ResponseWriter, r *http.Request) {
+// Update the deadline of a todo
+func UpdateTodoDeadline(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	id, _ := primitive.ObjectIDFromHex(params["id"])
-
-	_, err := collection.DeleteOne(context.Background(), bson.M{"_id": id})
+	todoID, err := primitive.ObjectIDFromHex(params["id"])
 	if err != nil {
-		respondWithJSON(w, http.StatusInternalServerError, err.Error())
+		http.Error(w, "Invalid todo ID", http.StatusBadRequest)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, "Todo deleted successfully")
-}
+	var updatedTodo models.Todo
+	json.NewDecoder(r.Body).Decode(&updatedTodo)
+	updatedTodo.ID = todoID
 
-// PUT /todos/{id}/status
-func UpdateStatus(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
-	id, _ := primitive.ObjectIDFromHex(params["id"])
-
-	var status struct {
-		Status string `json:"status"`
-	}
-	json.NewDecoder(r.Body).Decode(&status)
-
-	_, err := collection.UpdateOne(context.Background(), bson.M{"_id": id}, bson.M{"$set": bson.M{"status": status.Status}})
+	filter := bson.M{"_id": todoID}
+	update := bson.M{"$set": bson.M{
+		"deadline": updatedTodo.Deadline,
+	}}
+	_, err = todoCollection.UpdateOne(context.TODO(), filter, update)
 	if err != nil {
-		respondWithJSON(w, http.StatusInternalServerError, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	respondWithJSON(w, http.StatusOK, "Status updated successfully")
+	json.NewEncoder(w).Encode(updatedTodo)
 }
 
-// GET /todos
+// List all todos
 func ListTodos(w http.ResponseWriter, r *http.Request) {
-	var todos []Todo
+	var todos []models.Todo
 
-	cursor, err := collection.Find(context.Background(), bson.M{})
+	cursor, err := todoCollection.Find(context.TODO(), bson.M{})
 	if err != nil {
-		respondWithJSON(w, http.StatusInternalServerError, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer cursor.Close(context.Background())
+	defer cursor.Close(context.TODO())
 
-	for cursor.Next(context.Background()) {
-		var todo Todo
-		cursor.Decode(&todo)
+	for cursor.Next(context.TODO()) {
+		var todo models.Todo
+		err := cursor.Decode(&todo)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		todos = append(todos, todo)
 	}
 
-	respondWithJSON(w, http.StatusOK, todos)
+	json.NewEncoder(w).Encode(todos)
+}
+
+// Delete a todo
+func DeleteTodo(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	todoID, err := primitive.ObjectIDFromHex(params["id"])
+	if err != nil {
+		http.Error(w, "Invalid todo ID", http.StatusBadRequest)
+		return
+	}
+
+	filter := bson.M{"_id": todoID}
+	_, err = todoCollection.DeleteOne(context.TODO(), filter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

@@ -1,58 +1,139 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
+	"log"
 	"net/http"
+	"time"
 
+	"github.com/Austine05/todo-server/config"
+	"github.com/Austine05/todo-server/controllers"
 	"github.com/Austine05/todo-server/models"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+var userCollection *mongo.Collection
+
+func init() {
+	userCollection = dbClient.Database("todosDB").Collection("user")
+}
+
+type Claims struct {
+	Username string `json:"username"`
+	jwt.StandardClaims
+}
 
 // Register a new user
 func RegisterUser(w http.ResponseWriter, r *http.Request) {
 	var newUser models.User
 	json.NewDecoder(r.Body).Decode(&newUser)
-	newUser.ID = uuid.New().String()
-	err := models.RegisterUser(newUser)
+	newUser.ID = primitive.NewObjectID().Hex()
+
+	_, err := userCollection.InsertOne(context.TODO(), newUser)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(newUser)
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+// Login a user and generate a JWT token
+func LoginUser(w http.ResponseWriter, r *http.Request) {
+	var credentials struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	json.NewDecoder(r.Body).Decode(&credentials)
+
+	var user models.User
+	err := userCollection.FindOne(context.TODO(), bson.M{"username": credentials.Username}).Decode(&user)
+	if err != nil {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	if user.Password != credentials.Password {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": user.Username,
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+	})
+
+	tokenString, err := token.SignedString([]byte(config.JwtSecret))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := struct {
+		Token string `json:"token"`
+	}{
+		Token: tokenString,
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 // Update an existing user
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	user, err := models.GetUserByID(params["id"])
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	userID := params["id"]
+
+	claims, ok := r.Context().Value("claims").(*Claims)
+	if !ok || claims.Username != userID {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	user.FirstName = r.FormValue("firstName")
-	user.LastName = r.FormValue("lastName")
-	user.Email = r.FormValue("email")
-	user.Mobile = r.FormValue("mobile")
-	err = models.UpdateUser(user)
+
+	var updatedUser models.User
+	json.NewDecoder(r.Body).Decode(&updatedUser)
+
+	filter := bson.M{"_id": userID}
+	update := bson.M{"$set": bson.M{
+		"firstName": updatedUser.FirstName,
+		"lastName":  updatedUser.LastName,
+		"email":     updatedUser.Email,
+		"mobile":    updatedUser.Mobile,
+	}}
+	_, err := userCollection.UpdateOne(context.TODO(), filter, update)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(user)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 // Update the password of a user
 func UpdatePassword(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	user, err := models.GetUserByID(params["id"])
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	userID := params["id"]
+
+	claims, ok := r.Context().Value("claims").(*Claims)
+	if !ok || claims.Username != userID {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	user.Password = r.FormValue("password")
-	err = models.UpdatePassword(user)
+
+	var updatedUser models.User
+	json.NewDecoder(r.Body).Decode(&updatedUser)
+
+	filter := bson.M{"_id": userID}
+	update := bson.M{"$set": bson.M{
+		"password": updatedUser.Password,
+	}}
+	_, err := userCollection.UpdateOne(context.TODO(), filter, update)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(user)
+
+	w.WriteHeader(http.StatusOK)
 }
